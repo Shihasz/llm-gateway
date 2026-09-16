@@ -1,0 +1,10 @@
+services:
+  gateway:
+    build: .
+    container_name: llm-gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_NAME=llm-gateway
+      - ENVIRONMENT=local
+    restart: unless-stopped

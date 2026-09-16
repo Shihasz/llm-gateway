@@ -9,9 +9,17 @@ Docker Compose on a single machine.
 🚧 Early scaffold — health-check endpoint only.
 
 ## Run locally
-\```bash
+
+### Option A: Docker Compose (recommended)
+```bash
+docker compose up --build
+```
+Visit http://localhost:8000/health
+
+### Option B: Python venv
+```bash
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload
-\```
-
-Then visit http://localhost:8000/health
+```
