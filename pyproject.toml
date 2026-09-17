@@ -1,0 +1,19 @@
+[project]
+name = "llm-gateway"
+version = "0.1.0"
+description = "A local, portable LLM Ops platform"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = []
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.pyright]
+reportMissingTypeStubs = false
