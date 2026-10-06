@@ -8,8 +8,10 @@ services:
       - APP_NAME=llm-gateway
       - ENVIRONMENT=local
       - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql+psycopg2://gateway:gateway@postgres:5432/gateway
     depends_on:
       - redis
+      - postgres
     restart: unless-stopped
 
   redis:
@@ -21,5 +23,19 @@ services:
       - redis_data:/data
     restart: unless-stopped
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: llm-gateway-postgres
+    environment:
+      - POSTGRES_USER=gateway
+      - POSTGRES_PASSWORD=gateway
+      - POSTGRES_DB=gateway
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
 volumes:
   redis_data:
+  postgres_data:

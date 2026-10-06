@@ -17,3 +17,6 @@ known-first-party = ["app"]
 
 [tool.pyright]
 reportMissingTypeStubs = false
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.params.Depends"]
