@@ -3,8 +3,10 @@ from pydantic import BaseModel
 from sqlalchemy import Integer, func
 from sqlalchemy.orm import Session
 
+from app.core.auth import get_api_key
 from app.core.cache import get_cached_response, make_cache_key, set_cached_response
 from app.core.db import get_db
+from app.core.ratelimit import check_rate_limit
 from app.core.registry import get_provider, list_providers
 from app.models import UsageRecord
 
@@ -32,7 +34,15 @@ def get_providers():
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest, db: Session = Depends(get_db)):
+async def chat(
+    request: ChatRequest,
+    db: Session = Depends(get_db),
+    api_key: str = Depends(get_api_key),
+):
+    allowed, remaining = check_rate_limit(api_key)
+    if not allowed:
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+
     try:
         provider = get_provider(request.provider)
     except ValueError as e:
