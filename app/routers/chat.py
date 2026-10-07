@@ -1,3 +1,5 @@
+import time
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import Integer, func
@@ -6,9 +8,17 @@ from sqlalchemy.orm import Session
 from app.core.auth import get_api_key
 from app.core.cache import get_cached_response, make_cache_key, set_cached_response
 from app.core.db import get_db
+from app.core.logging import get_logger
+from app.core.metrics import (
+    chat_request_duration_seconds,
+    chat_requests_total,
+    rate_limit_rejections_total,
+)
 from app.core.ratelimit import check_rate_limit
 from app.core.registry import get_provider, list_providers
 from app.models import UsageRecord
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/v1", tags=["chat"])
 
@@ -39,8 +49,12 @@ async def chat(
     db: Session = Depends(get_db),
     api_key: str = Depends(get_api_key),
 ):
+    start = time.perf_counter()
+
     allowed, remaining = check_rate_limit(api_key)
     if not allowed:
+        rate_limit_rejections_total.labels(api_key=api_key).inc()
+        logger.warning("rate_limit_exceeded", api_key=api_key)
         raise HTTPException(status_code=429, detail="Rate limit exceeded")
 
     try:
@@ -76,6 +90,23 @@ async def chat(
         )
     )
     db.commit()
+
+    duration = time.perf_counter() - start
+    chat_requests_total.labels(
+        provider=response_data["provider"], model=response_data["model"], cached=str(was_cached)
+    ).inc()
+    chat_request_duration_seconds.labels(
+        provider=response_data["provider"], model=response_data["model"]
+    ).observe(duration)
+
+    logger.info(
+        "chat_request_completed",
+        provider=response_data["provider"],
+        model=response_data["model"],
+        cached=was_cached,
+        duration_ms=round(duration * 1000, 2),
+        api_key=api_key,
+    )
 
     return ChatResponse(**response_data, cached=was_cached)
 
