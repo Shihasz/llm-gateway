@@ -31,3 +31,8 @@ Install dev tools (linting, formatting):
 pip install -r requirements-dev.txt
 ruff check .
 ```
+
+## Observability
+
+- Prometheus: http://localhost:9090
+- Grafana: http://localhost:3000 (admin/admin, or anonymous viewer access)
