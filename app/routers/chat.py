@@ -1,6 +1,7 @@
 import time
 
 from fastapi import APIRouter, Depends, HTTPException
+from opentelemetry import trace
 from pydantic import BaseModel
 from sqlalchemy import Integer, func
 from sqlalchemy.orm import Session
@@ -18,9 +19,9 @@ from app.core.ratelimit import check_rate_limit
 from app.core.registry import get_provider, list_providers
 from app.models import UsageRecord
 
-logger = get_logger(__name__)
-
 router = APIRouter(prefix="/v1", tags=["chat"])
+logger = get_logger(__name__)
+tracer = trace.get_tracer(__name__)
 
 
 class ChatRequest(BaseModel):
@@ -51,7 +52,11 @@ async def chat(
 ):
     start = time.perf_counter()
 
-    allowed, remaining = check_rate_limit(api_key)
+    with tracer.start_as_current_span("ratelimit.check") as span:
+        allowed, remaining = check_rate_limit(api_key)
+        span.set_attribute("ratelimit.allowed", allowed)
+        span.set_attribute("ratelimit.remaining", remaining)
+
     if not allowed:
         rate_limit_rejections_total.labels(api_key=api_key).inc()
         logger.warning("rate_limit_exceeded", api_key=api_key)
@@ -63,13 +68,22 @@ async def chat(
         raise HTTPException(status_code=400, detail=str(e)) from e
 
     cache_key = make_cache_key(request.provider, request.model, request.prompt)
-    cached = get_cached_response(cache_key)
+
+    with tracer.start_as_current_span("cache.lookup") as span:
+        cached = get_cached_response(cache_key)
+        span.set_attribute("cache.hit", cached is not None)
 
     if cached is not None:
         response_data = cached
         was_cached = True
     else:
-        result = await provider.complete(request.prompt, request.model)
+        with tracer.start_as_current_span("provider.complete") as span:
+            span.set_attribute("llm.provider", request.provider)
+            span.set_attribute("llm.model", request.model)
+            result = await provider.complete(request.prompt, request.model)
+            span.set_attribute("llm.input_tokens", result.input_tokens)
+            span.set_attribute("llm.output_tokens", result.output_tokens)
+
         response_data = {
             "text": result.text,
             "provider": result.provider,
@@ -80,16 +94,17 @@ async def chat(
         set_cached_response(cache_key, response_data)
         was_cached = False
 
-    db.add(
-        UsageRecord(
-            provider=response_data["provider"],
-            model=response_data["model"],
-            input_tokens=response_data["input_tokens"],
-            output_tokens=response_data["output_tokens"],
-            cached=was_cached,
+    with tracer.start_as_current_span("usage.persist"):
+        db.add(
+            UsageRecord(
+                provider=response_data["provider"],
+                model=response_data["model"],
+                input_tokens=response_data["input_tokens"],
+                output_tokens=response_data["output_tokens"],
+                cached=was_cached,
+            )
         )
-    )
-    db.commit()
+        db.commit()
 
     duration = time.perf_counter() - start
     chat_requests_total.labels(

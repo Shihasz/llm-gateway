@@ -5,10 +5,12 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from app.core.config import settings
 from app.core.db import init_db
 from app.core.logging import configure_logging
+from app.core.tracing import configure_tracing
 from app.routers import chat
 
 app = FastAPI(title=settings.app_name)
 app.include_router(chat.router)
+configure_tracing(app)
 
 
 @app.on_event("startup")

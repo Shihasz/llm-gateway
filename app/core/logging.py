@@ -2,6 +2,18 @@ import logging
 import sys
 
 import structlog
+from opentelemetry import trace
+from structlog.types import EventDict, WrappedLogger
+
+
+def add_trace_context(
+    _logger: WrappedLogger, _method_name: str, event_dict: EventDict
+) -> EventDict:
+    span_context = trace.get_current_span().get_span_context()
+    if span_context.is_valid:
+        event_dict["trace_id"] = format(span_context.trace_id, "032x")
+        event_dict["span_id"] = format(span_context.span_id, "016x")
+    return event_dict
 
 
 def configure_logging() -> None:
@@ -11,6 +23,7 @@ def configure_logging() -> None:
         processors=[
             structlog.processors.TimeStamper(fmt="iso"),
             structlog.processors.add_log_level,
+            add_trace_context,
             structlog.processors.StackInfoRenderer(),
             structlog.processors.JSONRenderer(),
         ],

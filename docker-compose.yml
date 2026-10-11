@@ -9,9 +9,19 @@ services:
       - ENVIRONMENT=local
       - REDIS_URL=redis://redis:6379/0
       - DATABASE_URL=postgresql+psycopg2://gateway:gateway@postgres:5432/gateway
+      - OTLP_ENDPOINT=http://jaeger:4318
     depends_on:
       - redis
       - postgres
+      - jaeger
+    restart: unless-stopped
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    container_name: llm-gateway-jaeger
+    ports:
+      - "16686:16686"
+      - "4318:4318"
     restart: unless-stopped
 
   redis:
