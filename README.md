@@ -36,3 +36,6 @@ ruff check .
 
 - Prometheus: http://localhost:9090
 - Grafana: http://localhost:3000 (admin/admin, or anonymous viewer access)
+
+Grafana auto-provisions the Prometheus data source and the **LLM Gateway Overview**
+dashboard on startup (see `grafana/`). No manual setup needed.
