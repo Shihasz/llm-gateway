@@ -40,3 +40,22 @@ ruff check .
 
 Grafana auto-provisions the Prometheus data source and the **LLM Gateway Overview**
 dashboard on startup (see `grafana/`). No manual setup needed.
+
+## Providers
+
+| Provider | Notes |
+|----------|-------|
+| `mock` | Deterministic, no setup needed |
+| `mock-failing` | Always errors; used to demo fallback routing |
+| `anthropic` | Enabled when `ANTHROPIC_API_KEY` is set (see `.env.example`) |
+| `ollama` | Local models; start with `docker compose --profile ollama up` |
+
+Requests can list `fallbacks`, tried in order if the primary provider fails:
+```json
+{
+  "prompt": "hello",
+  "provider": "anthropic",
+  "model": "claude-haiku-5-5",
+  "fallbacks": [{"provider": "ollama", "model": "llama3.2:1b"}]
+}
+```

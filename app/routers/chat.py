@@ -2,7 +2,7 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException
 from opentelemetry import trace
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import Integer, func
 from sqlalchemy.orm import Session
 
@@ -17,6 +17,7 @@ from app.core.metrics import (
 )
 from app.core.ratelimit import check_rate_limit
 from app.core.registry import get_provider, list_providers
+from app.core.routing import AllProvidersFailedError, ProviderTarget, complete_with_fallback
 from app.models import UsageRecord
 
 router = APIRouter(prefix="/v1", tags=["chat"])
@@ -28,6 +29,7 @@ class ChatRequest(BaseModel):
     prompt: str
     provider: str = "mock"
     model: str = "mock-model"
+    fallbacks: list[ProviderTarget] = Field(default_factory=list)
 
 
 class ChatResponse(BaseModel):
@@ -37,6 +39,7 @@ class ChatResponse(BaseModel):
     input_tokens: int
     output_tokens: int
     cached: bool
+    fallback_used: bool = False
 
 
 @router.get("/providers")
@@ -62,8 +65,11 @@ async def chat(
         logger.warning("rate_limit_exceeded", api_key=api_key)
         raise HTTPException(status_code=429, detail="Rate limit exceeded")
 
+    targets = [ProviderTarget(provider=request.provider, model=request.model), *request.fallbacks]
+
     try:
-        provider = get_provider(request.provider)
+        for target in targets:
+            get_provider(target.provider)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
@@ -73,16 +79,16 @@ async def chat(
         cached = get_cached_response(cache_key)
         span.set_attribute("cache.hit", cached is not None)
 
+    fallback_used = False
     if cached is not None:
         response_data = cached
         was_cached = True
     else:
-        with tracer.start_as_current_span("provider.complete") as span:
-            span.set_attribute("llm.provider", request.provider)
-            span.set_attribute("llm.model", request.model)
-            result = await provider.complete(request.prompt, request.model)
-            span.set_attribute("llm.input_tokens", result.input_tokens)
-            span.set_attribute("llm.output_tokens", result.output_tokens)
+        try:
+            result, fallback_used = await complete_with_fallback(request.prompt, targets)
+        except AllProvidersFailedError as e:
+            logger.error("all_providers_failed", error=str(e))
+            raise HTTPException(status_code=502, detail=f"All providers failed: {e}") from e
 
         response_data = {
             "text": result.text,
@@ -91,7 +97,11 @@ async def chat(
             "input_tokens": result.input_tokens,
             "output_tokens": result.output_tokens,
         }
-        set_cached_response(cache_key, response_data)
+        # Cache under the provider that actually served the request, so a degraded
+        # fallback answer is never served later as if it came from the primary.
+        set_cached_response(
+            make_cache_key(result.provider, result.model, request.prompt), response_data
+        )
         was_cached = False
 
     with tracer.start_as_current_span("usage.persist"):
@@ -119,11 +129,12 @@ async def chat(
         provider=response_data["provider"],
         model=response_data["model"],
         cached=was_cached,
+        fallback_used=fallback_used,
         duration_ms=round(duration * 1000, 2),
         api_key=api_key,
     )
 
-    return ChatResponse(**response_data, cached=was_cached)
+    return ChatResponse(**response_data, cached=was_cached, fallback_used=fallback_used)
 
 
 @router.get("/usage")

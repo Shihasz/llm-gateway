@@ -17,3 +17,9 @@ rate_limit_rejections_total = Counter(
     "Total number of requests rejected by rate limiting",
     ["api_key"],
 )
+
+provider_errors_total = Counter(
+    "provider_errors_total",
+    "Total number of failed provider calls",
+    ["provider", "model"],
+)

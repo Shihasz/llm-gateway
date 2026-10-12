@@ -10,6 +10,8 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - DATABASE_URL=postgresql+psycopg2://gateway:gateway@postgres:5432/gateway
       - OTLP_ENDPOINT=http://jaeger:4318
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OLLAMA_BASE_URL=http://ollama:11434
     depends_on:
       - redis
       - postgres
@@ -76,8 +78,19 @@ services:
       - prometheus
     restart: unless-stopped
 
+  ollama:
+    image: ollama/ollama:0.3.12
+    container_name: llm-gateway-ollama
+    profiles: ["ollama"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
 volumes:
   redis_data:
   postgres_data:
   prometheus_data:
   grafana_data:
+  ollama_data:
