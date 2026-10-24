@@ -13,18 +13,24 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OLLAMA_BASE_URL=http://ollama:11434
     depends_on:
-      - redis
-      - postgres
-      - jaeger
+      redis:
+        condition: service_started
+      jaeger:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
 
-  jaeger:
-    image: jaegertracing/all-in-one:1.62.0
-    container_name: llm-gateway-jaeger
-    ports:
-      - "16686:16686"
-      - "4318:4318"
-    restart: unless-stopped
+  migrate:
+    build: .
+    container_name: llm-gateway-migrate
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://gateway:gateway@postgres:5432/gateway
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
 
   redis:
     image: redis:7-alpine
@@ -46,6 +52,11 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gateway -d gateway"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     restart: unless-stopped
 
   prometheus:
@@ -76,6 +87,14 @@ services:
       - "3000:3000"
     depends_on:
       - prometheus
+    restart: unless-stopped
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    container_name: llm-gateway-jaeger
+    ports:
+      - "16686:16686"
+      - "4318:4318"
     restart: unless-stopped
 
   ollama:

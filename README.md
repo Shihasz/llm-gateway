@@ -103,8 +103,23 @@ docker compose up -d redis postgres jaeger
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt
+alembic upgrade head
 uvicorn app.main:app --reload
 ```
+
+## Database migrations
+
+The schema is managed with Alembic. In Docker Compose, a one-shot `migrate` service
+runs `alembic upgrade head` and the gateway starts only after it succeeds.
+
+```bash
+alembic revision --autogenerate -m "describe the change"   # after editing app/models.py
+alembic upgrade head
+alembic check                                              # fails if models and migrations diverge
+```
+
+A test runs the same check against SQLite, so CI catches a model change that is
+missing its migration.
 
 Lint, format and test:
 
@@ -119,7 +134,7 @@ and tracing is disabled.
 
 ## Roadmap
 
-- [ ] Alembic migrations (replacing `create_all` at startup)
+- [x] Alembic migrations (replacing `create_all` at startup)
 - [ ] Evaluation harness for prompt/latency regression checks
 - [ ] API key management and auth on the usage endpoints
 - [ ] Kubernetes manifests (Helm chart) and Terraform reference modules (design artifacts, not deployed)
